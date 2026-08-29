@@ -25,9 +25,13 @@ venv/
 Thumbs.db
 
 # Databases
+wardrobe.db
 *.db
 *.sqlite
 *.sqlite3
+
+# Runtime artifacts (image uploads)
+uploads/
 
 # Node / Vite / Webpack / TypeScript
 node_modules/
