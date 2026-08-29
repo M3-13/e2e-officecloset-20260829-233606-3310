@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useState, type CSSProperties, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { apiFetch } from '../api/client';
 import { useAuth } from '../context/AuthContext';
@@ -8,13 +8,34 @@ interface AuthResponse {
   token_type: string;
 }
 
-const fieldStyle: React.CSSProperties = {
+export interface RegisterDeps {
+  apiFetch: typeof apiFetch;
+  setToken: (token: string | null) => void;
+  loadMe: () => Promise<void>;
+  navigate: (to: string) => void;
+}
+
+export async function submitRegister(
+  payload: { username: string; email: string; password: string },
+  deps: RegisterDeps,
+): Promise<void> {
+  const res = await deps.apiFetch<AuthResponse>('/api/auth/register', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  deps.setToken(res.access_token);
+  await deps.loadMe();
+  deps.navigate('/wardrobe');
+}
+
+const fieldStyle: CSSProperties = {
   display: 'flex',
   flexDirection: 'column',
   gap: 'var(--space-1)',
 };
 
-const labelStyle: React.CSSProperties = {
+const labelStyle: CSSProperties = {
   fontSize: 14,
   color: 'var(--color-muted)',
 };
@@ -33,14 +54,10 @@ export default function RegisterPage() {
     setError(null);
     setSubmitting(true);
     try {
-      const res = await apiFetch<AuthResponse>('/api/auth/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, email, password }),
-      });
-      setToken(res.access_token);
-      await loadMe();
-      navigate('/wardrobe');
+      await submitRegister(
+        { username, email, password },
+        { apiFetch, setToken, loadMe, navigate },
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Registrierung fehlgeschlagen.');
     } finally {

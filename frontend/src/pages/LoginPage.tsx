@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useState, type CSSProperties, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { apiFetch } from '../api/client';
 import { useAuth } from '../context/AuthContext';
@@ -8,13 +8,34 @@ interface AuthResponse {
   token_type: string;
 }
 
-const fieldStyle: React.CSSProperties = {
+export interface LoginDeps {
+  apiFetch: typeof apiFetch;
+  setToken: (token: string | null) => void;
+  loadMe: () => Promise<void>;
+  navigate: (to: string) => void;
+}
+
+export async function submitLogin(
+  payload: { username: string; password: string },
+  deps: LoginDeps,
+): Promise<void> {
+  const res = await deps.apiFetch<AuthResponse>('/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  deps.setToken(res.access_token);
+  await deps.loadMe();
+  deps.navigate('/wardrobe');
+}
+
+const fieldStyle: CSSProperties = {
   display: 'flex',
   flexDirection: 'column',
   gap: 'var(--space-1)',
 };
 
-const labelStyle: React.CSSProperties = {
+const labelStyle: CSSProperties = {
   fontSize: 14,
   color: 'var(--color-muted)',
 };
@@ -32,14 +53,10 @@ export default function LoginPage() {
     setError(null);
     setSubmitting(true);
     try {
-      const res = await apiFetch<AuthResponse>('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password }),
-      });
-      setToken(res.access_token);
-      await loadMe();
-      navigate('/wardrobe');
+      await submitLogin(
+        { username, password },
+        { apiFetch, setToken, loadMe, navigate },
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Anmeldung fehlgeschlagen.');
     } finally {
