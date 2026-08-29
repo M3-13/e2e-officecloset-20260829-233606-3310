@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { apiFetch } from '../api/client';
+import { loadItemImage, releaseItemImage } from '../api/wardrobeImage';
 import type { ClothingItem } from '../api/wardrobe';
 
 interface WardrobeItemCardProps {
@@ -11,6 +11,10 @@ interface WardrobeItemCardProps {
 function WardrobeImage({ item }: { item: ClothingItem }) {
   const [url, setUrl] = useState<string | null>(null);
 
+  // Depend on the whole `item` object: after a PUT replaces the image, the path
+  // (image_url) stays identical, so `[id, image_url]` would NOT re-run and the
+  // stale object URL would stay visible. A new item reference (the page refetches
+  // the list after create/edit/delete) must reload the image.
   useEffect(() => {
     let objectUrl: string | null = null;
     let cancelled = false;
@@ -23,10 +27,13 @@ function WardrobeImage({ item }: { item: ClothingItem }) {
 
     void (async () => {
       try {
-        const blob = await apiFetch<Blob>(imageUrl);
-        if (cancelled) return;
-        objectUrl = URL.createObjectURL(blob);
-        setUrl(objectUrl);
+        const next = await loadItemImage(imageUrl);
+        if (cancelled) {
+          releaseItemImage(next);
+          return;
+        }
+        objectUrl = next;
+        setUrl(next);
       } catch {
         if (!cancelled) setUrl(null);
       }
@@ -34,9 +41,9 @@ function WardrobeImage({ item }: { item: ClothingItem }) {
 
     return () => {
       cancelled = true;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      if (objectUrl) releaseItemImage(objectUrl);
     };
-  }, [item.id, item.image_url]);
+  }, [item]);
 
   if (url) {
     return <img className="wardrobe-card__image" src={url} alt={item.name} />;
