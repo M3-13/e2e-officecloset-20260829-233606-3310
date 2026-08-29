@@ -1,7 +1,6 @@
 """Authentication router, OAuth2 scheme and current-user dependency."""
 
 import time
-from contextlib import suppress
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
@@ -27,6 +26,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
 _RATE_LIMIT_SECONDS = 60.0
 _RATE_LIMIT_MAX = 10
+_RATE_LOG_PRUNE_AT = 10_000
 _rate_log: dict[tuple[str, str], list[float]] = {}
 
 
@@ -40,11 +40,20 @@ def _rate_limited(client_ip: str, endpoint: str) -> bool:
     """Record a request and return True once the per-minute limit is exceeded."""
     now = time.monotonic()
     key = (client_ip, endpoint)
-    timestamps = _rate_log.setdefault(key, [])
+    timestamps = _rate_log.get(key)
+    if timestamps is None:
+        _rate_log[key] = [now]
+        return False
+
     timestamps[:] = [t for t in timestamps if now - t < _RATE_LIMIT_SECONDS]
     if len(timestamps) >= _RATE_LIMIT_MAX:
         return True
     timestamps.append(now)
+
+    if len(_rate_log) > _RATE_LOG_PRUNE_AT:
+        for stale_key, stale in list(_rate_log.items()):
+            if not stale or now - stale[-1] >= _RATE_LIMIT_SECONDS:
+                del _rate_log[stale_key]
     return False
 
 
@@ -144,11 +153,10 @@ def delete_me(
         raise HTTPException(status_code=404, detail="User not found")
 
     items = db.execute(select(ClothingItem).where(ClothingItem.owner_id == user.id)).scalars().all()
+    image_filenames = [item.image_url for item in items if item.image_url]
 
     db.delete(user)
     db.commit()
 
-    for item in items:
-        if item.image_url:
-            with suppress(FileNotFoundError):
-                delete_image(item.image_url, UPLOAD_DIR)
+    for filename in image_filenames:
+        delete_image(filename, UPLOAD_DIR)

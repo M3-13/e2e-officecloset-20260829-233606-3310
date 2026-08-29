@@ -6,8 +6,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from backend import auth, models
-from backend.config import UPLOAD_DIR
 from backend.db import get_db
+from backend.images import save_image
 from backend.main import app
 from backend.security import create_access_token, decode_token, hash_password, verify_password
 
@@ -181,7 +181,11 @@ def test_delete_me_removes_account(client):
     assert me.status_code == 401
 
 
-def test_delete_me_deletes_image_files(client, session_factory, monkeypatch):
+def test_delete_me_deletes_image_files(client, session_factory, monkeypatch, tmp_path):
+    upload_dir = tmp_path / "uploads"
+    filename = save_image(b"\x89PNG\r\n\x1a\n" + b"x" * 8, str(upload_dir))
+    assert (upload_dir / filename).exists()
+
     session = session_factory()
     user = models.User(
         username="alice",
@@ -195,29 +199,24 @@ def test_delete_me_deletes_image_files(client, session_factory, monkeypatch):
         models.ClothingItem(
             name="Dress",
             category="Kleid",
-            image_url="photo.jpg",
+            image_url=filename,
             owner_id=user.id,
         )
     )
     session.commit()
     session.close()
 
+    monkeypatch.setattr(auth, "UPLOAD_DIR", str(upload_dir))
+
     token = client.post(
         "/api/auth/login",
         json={"username": "alice", "password": "secret123"},
     ).json()["access_token"]
 
-    calls: list[tuple[str, str]] = []
-
-    def fake_delete_image(filename: str, upload_dir: str) -> None:
-        calls.append((filename, upload_dir))
-
-    monkeypatch.setattr(auth, "delete_image", fake_delete_image)
-
     response = client.delete("/api/auth/me", headers={"Authorization": f"Bearer {token}"})
 
     assert response.status_code == 204
-    assert calls == [("photo.jpg", UPLOAD_DIR)]
+    assert not (upload_dir / filename).exists()
 
 
 def test_delete_me_requires_auth(client):
